@@ -1,4 +1,4 @@
-# QTX LightningBolt Market Data Subscriber SDK
+# QTX Lightning Stream Lite Market Data SDK
 
 这是一个用于订阅和接收市场数据的 C 语言 SDK。它支持订阅多个交易对的行情数据，包括 Ticker、深度和成交信息。
 
@@ -44,13 +44,13 @@ typedef struct {
 ### 编译
 
 ```bash
-gcc -o subscriber subscriber.c
+gcc -o stream_lite stream_lite.c
 ```
 
 ### 运行
 
 ```bash
-./subscriber
+./stream_lite
 ```
 
 ### 订阅示例
