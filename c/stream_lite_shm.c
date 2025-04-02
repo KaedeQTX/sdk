@@ -1,3 +1,5 @@
+#include "sdk.c"
+
 #define SHM_NAME "/stream_lite"
 #define L2_SHM_NAME "/stream_lite_l2"
 #define MAX_QUEUE_SIZE 100000
@@ -10,7 +12,7 @@ typedef struct Msg
 {
     // 1: L1 Bid, -1: L1 Ask, 2: L2 Bid, -2: L2 Ask, 3: Buy Trade, -3: Sell Trade
     int msg_type;
-    // 1: Binance-Futures_BTCUSDT, 2: Binance-Futures_ETHUSDT, 3: Binance-Futures_SOLUSDT, 4: Binance-Futures_DOGEUSDT, 5: Binance_BTCUSDT
+    // Index of symbol
     int index;
     // Transaction Time MS
     long tx_ms;
@@ -30,7 +32,7 @@ typedef struct Msg2
 {
     // 1: L1 Bid, -1: L1 Ask, 2: L2 Bid, -2: L2 Ask, 3: Buy Trade, -3: Sell Trade
     int msg_type;
-    // 1: Binance-Futures_BTCUSDT, 2: Binance-Futures_ETHUSDT, 3: Binance-Futures_SOLUSDT, 4: Binance-Futures_DOGEUSDT, 5: Binance_BTCUSDT
+    // Index of symbol
     int index;
     // Transaction Time MS
     long tx_ms;
@@ -70,58 +72,6 @@ typedef struct
     Level levels[MAX_QUEUE_SIZE];
 } LevelQueue;
 
-// main.c
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <signal.h>
-#include <string.h>
-#include <arpa/inet.h>
-#include <time.h>
-
-#define PORT 5000
-#define SERVER "127.0.0.1"
-
-long long get_current_timestamp_ns()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);                      // 獲取當前時間
-    return (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec; // 轉換為納秒
-}
-
-void subscribe_sigusr1()
-{
-    int sock;
-    struct sockaddr_in server_addr;
-    pid_t pid = getpid(); // 取得當前進程的 PID
-
-    // 創建 UDP socket
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
-    {
-        perror("socket failed");
-        exit(EXIT_FAILURE);
-    }
-
-    // 設定目標地址
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
-    inet_pton(AF_INET, SERVER, &server_addr.sin_addr);
-
-    // 傳送 PID
-    if (sendto(sock, &pid, sizeof(pid), 0, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
-    {
-        perror("sendto failed");
-        close(sock);
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Sent PID %d to %s:%d\n", pid, SERVER, PORT);
-    close(sock);
-}
-
 int fd = 0;
 void *ptr;
 Queue *buf;
@@ -129,8 +79,33 @@ int fd2 = 0;
 void *ptr2;
 LevelQueue *buf2;
 
+long long get_current_timestamp_ns()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
 int main()
 {
+    if (init_subscription_manager() < 0)
+    {
+        return 1;
+    }
+
+    // 订阅默认的 symbols
+    const char *default_symbols[] = {
+        "binance-futures:btcusdt",
+        "binance:btcusdt"};
+    for (int i = 0; i < sizeof(default_symbols) / sizeof(default_symbols[0]); i++)
+    {
+        if (subscribe(default_symbols[i]) < 0)
+        {
+            fprintf(stderr, "Failed to subscribe to %s\n", default_symbols[i]);
+        }
+    }
+    print_status();
+
     fd = shm_open(SHM_NAME, O_RDWR, 0666);
     if (fd == -1)
     {
@@ -162,7 +137,13 @@ int main()
     buf2 = (LevelQueue *)ptr2;
 
     long cur = buf->to;
-    while (1)
+
+    // 设置信号处理
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+
+    // 主循环
+    while (running)
     {
         while (cur != buf->to)
         {
