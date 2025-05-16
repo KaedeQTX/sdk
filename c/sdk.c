@@ -12,6 +12,7 @@
 #define MAX_SYMBOLS 100
 #define MAX_SYMBOL_LEN 64
 #define SYMBOL_MANAGER "172.30.2.221"
+#define MY_PORT 8088
 
 typedef struct
 {
@@ -40,12 +41,11 @@ int init_subscription_manager()
         return -1;
     }
 
-    // 绑定到任意端口
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = 0; // 让系统自动分配端口
+    addr.sin_port = htons(MY_PORT);
 
     if (bind(manager.socket, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
