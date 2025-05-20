@@ -96,7 +96,14 @@ int main()
     // 订阅默认的 symbols
     const char *default_symbols[] = {
         "binance-futures:btcusdt",
-        "binance:btcusdt"};
+        "binance:btcusdt",
+        "okx-swap:BTC-USDT-SWAP",
+        "okx-spot:BTC-USDT",
+        "bybit:BTCUSDT",
+        "gate-io-futures:BTC_USDT",
+        "bitget-futures:BTCUSDT",
+        "bitget:BTCUSDT",
+    };
     for (int i = 0; i < sizeof(default_symbols) / sizeof(default_symbols[0]); i++)
     {
         if (subscribe(default_symbols[i]) < 0)
