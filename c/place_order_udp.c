@@ -78,26 +78,32 @@ int main()
     char msg[BUFFER_SIZE];
 
     // 1. 登入第一個帳號
+    // idx, mode, api_key, api_secret
     snprintf(msg, sizeof(msg), "0,0,%s,%s", API_KEY, API_SECRET);
     send_udp_message(sock, &server_addr, msg);
 
     // 2. 第一個帳號下單
-    snprintf(msg, sizeof(msg), "1,1,0,BTCUSDT,%ld,1,1,0.02,80000.0", client_order_id);
+    // idx, mode, account_idx, symbol, client_order_id, pos_side, side, order_type, size, price
+    snprintf(msg, sizeof(msg), "1,1,0,BTCUSDT,%ld,0,1,1,0.02,80000.0", client_order_id);
     send_udp_message(sock, &server_addr, msg);
 
     // 3. 第一個帳號取消訂單
+    // idx, mode, account_idx, symbol, client_order_id
     snprintf(msg, sizeof(msg), "2,-1,0,BTCUSDT,%ld", client_order_id);
     send_udp_message(sock, &server_addr, msg);
 
     // 4. 登入第二個帳號
+    // idx, mode, api_key, api_secret
     snprintf(msg, sizeof(msg), "0,0,%s,%s", API_KEY_2, API_SECRET_2);
     send_udp_message(sock, &server_addr, msg);
 
     // 5. 第二個帳號下單
-    snprintf(msg, sizeof(msg), "1,1,1,BTCUSDT,%ld,1,1,0.02,80000.0", client_order_id);
+    // idx, mode, account_idx, symbol, client_order_id, pos_side, side, order_type, size, price
+    snprintf(msg, sizeof(msg), "1,1,1,BTCUSDT,%ld,0,1,1,0.02,80000.0", client_order_id);
     send_udp_message(sock, &server_addr, msg);
 
     // 6. 第二個帳號取消訂單
+    // idx, mode, account_idx, symbol, client_order_id
     snprintf(msg, sizeof(msg), "2,-1,1,BTCUSDT,%ld", client_order_id);
     send_udp_message(sock, &server_addr, msg);
 
