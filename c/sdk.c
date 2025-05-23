@@ -89,12 +89,13 @@ int subscribe(const char *symbol)
 
     manager.buf[len] = '\0';
     unsigned int index;
-    if (sscanf(manager.buf, "%u", &index) == 1)
+    char subscripted_symbol[MAX_SYMBOL_LEN] = {0};
+    if (sscanf(manager.buf, "%u:%63s", &index, subscripted_symbol) == 2)
     {
         // 检查是否已经订阅
         for (int i = 0; i < manager.subscription_count; i++)
         {
-            if (strcmp(manager.subscriptions[i].symbol, symbol) == 0)
+            if (strcmp(manager.subscriptions[i].symbol, subscripted_symbol) == 0)
             {
                 return 0; // 已经订阅过了
             }
@@ -104,10 +105,11 @@ int subscribe(const char *symbol)
         if (manager.subscription_count < MAX_SYMBOLS)
         {
             strncpy(manager.subscriptions[manager.subscription_count].symbol,
-                    symbol, MAX_SYMBOL_LEN - 1);
+                    subscripted_symbol, MAX_SYMBOL_LEN - 1);
+            manager.subscriptions[manager.subscription_count].symbol[MAX_SYMBOL_LEN-1] = '\0';
             manager.subscriptions[manager.subscription_count].index = index;
             manager.subscription_count++;
-            printf("Successfully subscribed to %s with index %u\n", symbol, index);
+            printf("Successfully subscribed to %s with index %u\n", subscripted_symbol, index);
         }
     }
     else
@@ -218,3 +220,4 @@ void handle_signal(int sig)
     unsubscribe_all();
     running = 0;
 }
+
