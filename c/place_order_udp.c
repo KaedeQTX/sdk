@@ -79,7 +79,7 @@ int main()
 
     // 1. 登入第一個帳號
     // idx, mode, api_key, api_secret
-    // mode: 0: Login, 1: Place Order, -1: Cancel Order
+    // mode = 0: Login, 1: Place Order, -1: Cancel Order
     snprintf(msg, sizeof(msg), "0,0,%s,%s", API_KEY, API_SECRET);
     send_udp_message(sock, &server_addr, msg);
 
