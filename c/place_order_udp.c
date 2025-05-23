@@ -79,11 +79,14 @@ int main()
 
     // 1. 登入第一個帳號
     // idx, mode, api_key, api_secret
+    // mode: 0: Login, 1: Place Order, -1: Cancel Order
     snprintf(msg, sizeof(msg), "0,0,%s,%s", API_KEY, API_SECRET);
     send_udp_message(sock, &server_addr, msg);
 
     // 2. 第一個帳號下單
     // idx, mode, account_idx, symbol, client_order_id, pos_side, side, order_type, size, price
+    // pos_side = 0: BOTH, 1: LONG, 2: SHORT
+    // order_type = 0: IOC, 1: POST_ONLY, 2: GTC, 3: FOK
     snprintf(msg, sizeof(msg), "1,1,0,BTCUSDT,%ld,0,1,1,0.02,80000.0", client_order_id);
     send_udp_message(sock, &server_addr, msg);
 
