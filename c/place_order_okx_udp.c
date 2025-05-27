@@ -5,8 +5,8 @@
 #include <arpa/inet.h>
 #include <time.h>
 
-#define SERVER_IP "10.100.0.2"
-#define SERVER_PORT 6666
+#define SERVER_IP "172.30.3.142"
+#define SERVER_PORT 6669
 #define BUFFER_SIZE 1500
 #define API_KEY "API_KEY"
 #define API_SECRET "API_SECRET"
@@ -47,12 +47,12 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    // 設定本地監聽地址（10.100.0.1:6666）
+    // 設定本地監聽地址（0.0.0.0:6669）
     struct sockaddr_in local_addr;
     memset(&local_addr, 0, sizeof(local_addr));
     local_addr.sin_family = AF_INET;
-    local_addr.sin_addr.s_addr = inet_addr("10.100.0.1");
-    local_addr.sin_port = htons(6666);
+    local_addr.sin_addr.s_addr = inet_addr("0.0.0.0");
+    local_addr.sin_port = htons(6669);
 
     // 綁定本地端口
     if (bind(sock, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
@@ -62,7 +62,7 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    printf("Listening on UDP port 6666...\n");
+    printf("Listening on UDP port 6669...\n");
 
     // 設定目標（伺服器）地址
     struct sockaddr_in server_addr;
@@ -75,18 +75,23 @@ int main()
     long client_order_id = unix_time();
 
     // // 1. 發送 `connect` 訊息
+    // idx, mode, api_key, api_secret, api_pass
     char msg1[BUFFER_SIZE];
     snprintf(msg1, sizeof(msg1), "0,0,%s,%s,%s", API_KEY, API_SECRET, API_PASS);
     send_udp_message(sock, &server_addr, msg1);
+    // 等待連線完成
+    sleep(1);
 
     // 2. 發送 `create` 訂單訊息
+    // idx, mode, account_idx, symbol, client_order_id, side, order_type, size, price
     char msg2[BUFFER_SIZE];
-    snprintf(msg2, sizeof(msg2), "1,1,BTC-USDT,%ld,1,1,0.02,80000.0", client_order_id);
+    snprintf(msg2, sizeof(msg2), "1,1,0,BTC-USDT,%ld,1,1,0.02,80000.0", client_order_id);
     send_udp_message(sock, &server_addr, msg2);
 
     // 3. 發送 `cancel` 訂單訊息
+    // idx, mode, account_idx, symbol, client_order_id
     char msg3[BUFFER_SIZE];
-    snprintf(msg3, sizeof(msg3), "2,-1,BTC-USDT,%ld", client_order_id);
+    snprintf(msg3, sizeof(msg3), "2,-1,0,BTC-USDT,%ld", client_order_id);
     send_udp_message(sock, &server_addr, msg3);
 
     // 關閉套接字
@@ -94,3 +99,4 @@ int main()
 
     return 0;
 }
+
