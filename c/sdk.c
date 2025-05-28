@@ -11,7 +11,7 @@
 #define UDP_SIZE 65536
 #define MAX_SYMBOLS 100
 #define MAX_SYMBOL_LEN 64
-#define SYMBOL_MANAGER "172.30.2.221"
+#define SYMBOL_MANAGER "172.31.39.217"
 #define MY_PORT 8088
 
 typedef struct
@@ -142,20 +142,6 @@ int unsubscribe(const char *symbol)
             return -1;
         }
 
-        // // 接收响应
-        // struct sockaddr_in from_addr;
-        // socklen_t from_len = sizeof(from_addr);
-        // int len = recvfrom(manager.socket, manager.buf, UDP_SIZE, 0,
-        //                    (struct sockaddr *)&from_addr, &from_len);
-        // if (len < 0)
-        // {
-        //     perror("recvfrom failed");
-        //     return -1;
-        // }
-
-        // manager.buf[len] = '\0';
-        // printf("Unsubscribe response for %s: %s\n", symbol, manager.buf);
-
         // 移除订阅
         for (int i = pos; i < manager.subscription_count - 1; i++)
         {
@@ -205,7 +191,7 @@ void print_status()
 
 void handle_signal(int sig)
 {
-    unsubscribe_all();
     running = 0;
+    unsubscribe_all();
 }
 

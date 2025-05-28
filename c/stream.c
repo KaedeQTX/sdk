@@ -64,9 +64,9 @@ int main()
     const char *default_symbols[] = {
         "binance-futures:btcusdt",
         "binance:btcusdt",
-        "okx-swap:BTC-USDT-SWAP",
-        "okx-spot:BTC-USDT",
-        "bybit:BTCUSDT",
+        // "okx-swap:BTC-USDT-SWAP",
+        // "okx-spot:BTC-USDT",
+        // "bybit:BTCUSDT",
         "gate-io-futures:BTC_USDT",
         "bitget-futures:BTCUSDT",
         "bitget:BTCUSDT",
@@ -164,9 +164,9 @@ int main()
         }
     }
 
-    // 清理资源前先取消订阅所有符号
-    printf("Unsubscribing all symbols...\n");
-    unsubscribe_all();
+    // // 清理资源前先取消订阅所有符号
+    // printf("Unsubscribing all symbols...\n");
+    // unsubscribe_all();
 
     // 清理资源
     close(manager.socket);
