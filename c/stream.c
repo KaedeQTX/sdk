@@ -97,6 +97,12 @@ int main()
             continue;
         }
 
+        // 订阅
+        if (ntohs(from_addr.sin_port) == 8080) {
+            add_subscripton(len);
+            continue;
+        }
+
         Msg *msg = (Msg *)manager.buf;
         // 查找对应的订阅
         const char *symbol = NULL;

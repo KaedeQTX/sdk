@@ -76,17 +76,10 @@ int subscribe(const char *symbol)
         return -1;
     }
 
-    // 接收响应
-    struct sockaddr_in from_addr;
-    socklen_t from_len = sizeof(from_addr);
-    int len = recvfrom(manager.socket, manager.buf, UDP_SIZE, 0,
-                       (struct sockaddr *)&from_addr, &from_len);
-    if (len < 0)
-    {
-        perror("recvfrom failed");
-        return -1;
-    }
+    return 0;
+}
 
+int add_subscripton(int len) {
     manager.buf[len] = '\0';
     unsigned int index;
     char subscripted_symbol[MAX_SYMBOL_LEN] = {0};
@@ -111,11 +104,6 @@ int subscribe(const char *symbol)
             manager.subscription_count++;
             printf("Successfully subscribed to %s with index %u\n", subscripted_symbol, index);
         }
-    }
-    else
-    {
-        printf("Failed to subscribe to %s: %s\n", symbol, manager.buf);
-        return -1;
     }
 
     return 0;
@@ -154,19 +142,19 @@ int unsubscribe(const char *symbol)
             return -1;
         }
 
-        // 接收响应
-        struct sockaddr_in from_addr;
-        socklen_t from_len = sizeof(from_addr);
-        int len = recvfrom(manager.socket, manager.buf, UDP_SIZE, 0,
-                           (struct sockaddr *)&from_addr, &from_len);
-        if (len < 0)
-        {
-            perror("recvfrom failed");
-            return -1;
-        }
+        // // 接收响应
+        // struct sockaddr_in from_addr;
+        // socklen_t from_len = sizeof(from_addr);
+        // int len = recvfrom(manager.socket, manager.buf, UDP_SIZE, 0,
+        //                    (struct sockaddr *)&from_addr, &from_len);
+        // if (len < 0)
+        // {
+        //     perror("recvfrom failed");
+        //     return -1;
+        // }
 
-        manager.buf[len] = '\0';
-        printf("Unsubscribe response for %s: %s\n", symbol, manager.buf);
+        // manager.buf[len] = '\0';
+        // printf("Unsubscribe response for %s: %s\n", symbol, manager.buf);
 
         // 移除订阅
         for (int i = pos; i < manager.subscription_count - 1; i++)
