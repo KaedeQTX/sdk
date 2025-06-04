@@ -11,7 +11,7 @@
 #define UDP_SIZE 65536
 #define MAX_SYMBOLS 100
 #define MAX_SYMBOL_LEN 64
-#define SYMBOL_MANAGER "172.31.39.217"
+#define SYMBOL_MANAGER "10.11.4.97"
 #define MY_PORT 8088
 
 typedef struct
