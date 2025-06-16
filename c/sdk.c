@@ -11,8 +11,9 @@
 #define UDP_SIZE 65536
 #define MAX_SYMBOLS 100
 #define MAX_SYMBOL_LEN 64
-#define SYMBOL_MANAGER "10.11.4.97"
-#define MY_PORT 8088
+#define SUBSCRIPTION_MANAGER "10.11.4.97"
+#define SUBSCRIPTION_MANAGER_PORT 9080
+#define LOCAL_BINDING_PORT 9088
 
 typedef struct
 {
@@ -45,7 +46,7 @@ int init_subscription_manager()
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(MY_PORT);
+    addr.sin_port = htons(LOCAL_BINDING_PORT);
 
     if (bind(manager.socket, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
@@ -66,8 +67,8 @@ int subscribe(const char *symbol)
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(8080);
-    inet_pton(AF_INET, SYMBOL_MANAGER, &server_addr.sin_addr);
+    server_addr.sin_port = htons(SUBSCRIPTION_MANAGER_PORT);
+    inet_pton(AF_INET, SUBSCRIPTION_MANAGER, &server_addr.sin_addr);
 
     if (sendto(manager.socket, symbol, strlen(symbol), 0,
                (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
@@ -132,8 +133,8 @@ int unsubscribe(const char *symbol)
         struct sockaddr_in server_addr;
         memset(&server_addr, 0, sizeof(server_addr));
         server_addr.sin_family = AF_INET;
-        server_addr.sin_port = htons(8080);
-        inet_pton(AF_INET, SYMBOL_MANAGER, &server_addr.sin_addr);
+        server_addr.sin_port = htons(SUBSCRIPTION_MANAGER_PORT);
+        inet_pton(AF_INET, SUBSCRIPTION_MANAGER, &server_addr.sin_addr);
 
         if (sendto(manager.socket, unsubscribe_msg, strlen(unsubscribe_msg), 0,
                    (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
