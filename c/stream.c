@@ -34,10 +34,14 @@ typedef struct Msg2
     long local_ns;
     // Sequence Number / Trade ID
     long sn_id;
+    // not used
+    int asks_idx;
     // Number of asks
-    size_t asks_len;
+    int asks_len;
+    // not used
+    int bids_idx;
     // Number of bids
-    size_t bids_len;
+    int bids_len;
 } Msg2;
 
 typedef struct
