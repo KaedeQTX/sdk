@@ -102,7 +102,8 @@ int main()
         }
 
         // 订阅
-        if (ntohs(from_addr.sin_port) == 8080) {
+        if (ntohs(from_addr.sin_port) == SUBSCRIPTION_MANAGER_PORT)
+        {
             add_subscripton(len);
             continue;
         }
