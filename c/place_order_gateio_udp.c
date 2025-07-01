@@ -1,73 +1,189 @@
 /*
- * Gate.io UDP Order Placement Client SDK (FUTURES ONLY)
- *
- * This client demonstrates how to interact with the Gate.io UDP server
- * for futures trading account connection, order placement, and order cancellation.
+ * ===================================================================
+ * PROTOCOL OVERVIEW
+ * ===================================================================
  * 
- * NOTE: Currently only FUTURES trading is supported. Spot trading is not available.
+ * The UDP protocol uses CSV format with 3-field responses:
+ * Request:  idx,mode,param1,param2,...
+ * Response: idx:response_type:payload
  *
- * SERVER PORT: Confirm with the server administrator.
+ * RESPONSE TYPES (Single Character for Network Efficiency):
+ * - 'k': Service acknowledgment (successful operations)
+ * - 'e': Protocol/service errors (immediate rejection)  
+ * - 'r': Exchange responses (raw JSON from Gate.io)
  *
- * REQUEST MESSAGE FORMATS:
- * 1. Connect:      idx,0,api_key,api_secret[,user_id]
- * 2. Place Order:  idx,1,symbol,client_order_id,pos_side,side,order_type,size,price
- *    - pos_side: Position side parameter that controls reduce_only mapping:
- *      • 0 = Both (one-way mode): reduce_only=false, user manages exact position
- *      • 1 = Long (hedge mode): BUY → reduce_only=false (open), SELL → reduce_only=true (close)
- *      • -1 = Short (hedge mode): BUY → reduce_only=true (close), SELL → reduce_only=false (open)
- *    - side: 1=BUY, 2=SELL
- *    - size: MUST be positive integer (float like 1.5 would have QTX_ERR:INVALID_FORMAT!)
- *    - Extra arguments beyond required fields are ignored for latency optimization
- * 3. Cancel Order: idx,-1,symbol,client_order_id
+ * ===================================================================
+ * REQUEST FORMATS (COMPLETE REFERENCE)
+ * ===================================================================
  *
- * RESPONSE FORMAT:
- * All responses follow a unified 3-field format: idx:response_type:payload
- * 
- * Response Types:
- * - QTX_ACK: Service acknowledgment (e.g., "connected")
- * - QTX_ERR: Service error with format ERROR_TYPE-description
- * - EXC_RES: Raw JSON response from Gate.io exchange (both success and error)
+ * 1. CONNECT (Mode 0)
+ *    Format:  idx,0,api_key,api_secret[,user_id][,account_idx]
+ *    Example: "0,0,YOUR_API_KEY,YOUR_API_SECRET"                  (creates new account)
+ *             "0,0,YOUR_API_KEY,YOUR_API_SECRET,110284739"        (with user_id)
+ *             "0,0,YOUR_API_KEY,YOUR_API_SECRET,,2"               (replace account 2)
+ *             "0,0,YOUR_API_KEY,YOUR_API_SECRET,110284739,1"      (replace account 1 with user_id)
+ *    
+ *    Response Success: "0:k:0"   (returns actual account index)
+ *                     "0:k:2"   (if account_idx=2 was specified and exists)
+ *                     "0:k:3"   (if account_idx=100 was out of bounds, assigned next available)
+ *    Response Error:   "0:e:LOGIN_FAILED-check credentials"
+ *                     "0:e:INVALID_CREDENTIALS-credentials appear invalid"
+ *                     "0:e:INVALID_ACCOUNT_INDEX-account index must be numeric and positive"
+ *                     "0:e:ACCOUNT_LIMIT_EXCEEDED-account limit exceeded"
  *
- * Example Responses:
- * - Success connect: "0:QTX_ACK:connected"
- * - Error connect:   "0:QTX_ERR:LOGIN_FAILED-check credentials"
- * - Order success:   "1:EXC_RES:{\"header\":{\"status\":\"200\"},...}"
- * - Order error:     "1:EXC_RES:{\"header\":{\"status\":\"400\"},\"label\":\"INVALID_PARAM\",...}"
- * - Service error:   "1:QTX_ERR:NOT_CONNECTED-please connect first"
- * - Format error:    "1:QTX_ERR:INVALID_FORMAT-incorrect message format"
- * - Timeout error:   "1:QTX_ERR:TIMEOUT-no response received within 30s"
+ *    Notes:
+ *    - user_id is optional (only needed for private channel subscriptions)
+ *    - account_idx is optional (if provided, replaces existing account or appends if out of bounds)
+ *    - Empty user_id field: use double comma (e.g., "0,0,key,secret,,5")
+ *    - Server waits up to 5 seconds for WebSocket authentication
  *
- * GATE.IO DUAL RESPONSE PATTERN:
- * - PLACE ORDER operations receive TWO responses:
- *   1. Immediate ACK: "idx:EXC_RES:{\"ack\":true,...}" (order accepted)
- *   2. Final result: "idx:EXC_RES:{\"header\":{\"status\":\"200\"},...}" (order processed)
- * - Both responses have the same idx but different content
- * - CANCEL ORDER and CONNECT operations have single response only
+ * 2. PLACE ORDER (Mode 1)
+ *    Format:  idx,1,account_idx,symbol,client_order_id,pos_side,side,order_type,size,price
+ *    Example: "1,1,0,BTC_USDT,t-12345,0,1,1,1,75000.0"  (use account 0)
+ *    
+ *    Parameters:
+ *    - symbol: Gate.io format with underscore (BTC_USDT, ETH_USDT)
+ *    - client_order_id: Must start with "t-" prefix, <30 characters total
+ *    - pos_side: Position intent mapping (see POSITION SIDE MAPPING below)
+ *    - side: 1=BUY, 2=SELL (only these values are valid)
+ *    - order_type: 0=IOC, 1=PostOnly, 2=GTC, 3=FOK, 4=MARKET
+ *    - size: MUST be positive integer (contracts), NO floats allowed
+ *    - price: Order price (ignored for MARKET orders - use 0)
  *
- * COMMON ERROR FLOWS:
- * - If you place/cancel orders without connecting first: NOT_CONNECTED error
- * - If your credentials are invalid: LOGIN_FAILED error after connect attempt
- * - The server handles WebSocket authentication internally, so you won't see 
- *   intermediate states - just success (connected) or failure (LOGIN_FAILED)
+ *    Response: Single response (server uses simplified response handling)
  *
- * GATE.IO SPECIFIC REQUIREMENTS:
- * - Symbol format uses underscore (BTC_USDT) not concatenation (BTCUSDT)
- * - Gate.io WebSocket authentication only requires API key/secret
- * - Optional user_id parameter for private channel subscriptions (planned for future)
- * - Client order ID must start with "t-" prefix
- * - Futures size must be an integer (number of contracts)
- * - Market orders are identified by price=0 (not a separate order type)
- *   - MARKET order type (4) automatically sets price=0 and uses IOC
- *   - Advanced: FOK market orders using order_type=3 (FOK) with price=0
+ * 3. CANCEL ORDER (Mode -1)
+ *    Format:  idx,-1,account_idx,symbol,client_order_id
+ *    Example: "2,-1,0,BTC_USDT,t-12345"  (cancel on account 0)
+ *    
+ *    Response Success: "2:r:{\"header\":{\"status\":\"200\"},...}"
+ *    Response Error:   "2:e:INVALID_ACCOUNT_INDEX-account index must be numeric and positive"
+ *                     "2:e:ACCOUNT_NOT_FOUND-no account at specified index"
  *
- * CRITICAL SIZE VALIDATION:
- * - size parameter MUST be positive integer (e.g. 1, 2, 100)
- * - Float sizes (e.g. 1.5, 2.7) are rejected immediately with QTX_ERR:INVALID_FORMAT
- * - Gate.io uses signed size for BUY/SELL direction mapping, qtx uses side parameter for direction
+ * ===================================================================
+ * POSITION SIDE MAPPING (CRITICAL FOR HEDGE MODE)
+ * ===================================================================
  *
- * PROTOCOL OPTIMIZATIONS:
- * - Extra arguments beyond required fields are ignored for ultra-low latency
- * - Invalid formats are rejected immediately without network round-trips
+ * Gate.io doesn't support Binance-style positionSide parameter.
+ * The pos_side parameter controls reduce_only flag for position intent:
+ *
+ * pos_side=0 (One-way mode):
+ *   - Always reduce_only=false
+ *   - User manages exact position size
+ *   - All positions are netted together
+ *
+ * pos_side=1 (Long position in hedge mode):
+ *   - BUY orders: reduce_only=false (open long position)
+ *   - SELL orders: reduce_only=true (close long position)
+ *
+ * pos_side=-1 (Short position in hedge mode):
+ *   - BUY orders: reduce_only=true (close short position)  
+ *   - SELL orders: reduce_only=false (open short position)
+ *
+ * This mapping solves hedge mode ambiguity where BUY could mean 
+ * "open long" or "close short" depending on user intent.
+ *
+ * ===================================================================
+ * CRITICAL VALIDATION RULES
+ * ===================================================================
+ *
+ * 1. SIZE MUST BE POSITIVE INTEGER:
+ *    Valid:   "1", "10", "100"
+ *    Invalid: "1.5", "-1", "0", "1.0"
+ *    Result:  e:INVALID_FORMAT for non-integers
+ *
+ * 2. CLIENT ORDER ID REQUIREMENTS:
+ *    - Must start with "t-" prefix
+ *    - Total length < 30 characters
+ *    - Example: "t-12345", "t-timestamp-1"
+ *
+ * 3. SYMBOL FORMAT:
+ *    - Use underscore: "BTC_USDT", "ETH_USDT"
+ *    - NOT concatenated: "BTCUSDT" is wrong
+ *
+ * 4. SIDE VALUES:
+ *    - Only 1 (BUY) and 2 (SELL) are valid
+ *    - Other values → e:INVALID_FORMAT
+ *
+ * 5. MARKET ORDERS:
+ *    - Use order_type=4 (MARKET) with any price (ignored)
+ *    - OR use order_type=0/3 (IOC/FOK) with price=0
+ *    - Gate.io API requires price=0 for market orders
+ *
+ * ===================================================================
+ * ORDER TYPES REFERENCE
+ * ===================================================================
+ *
+ * 0 = IOC (Immediate or Cancel): Execute immediately, cancel remainder
+ * 1 = PostOnly: Only place as maker, reject if would execute immediately  
+ * 2 = GTC (Good Till Cancel): Remain active until filled or cancelled
+ * 3 = FOK (Fill or Kill): Execute completely or cancel entirely
+ * 4 = MARKET: Execute at best available price (price parameter ignored)
+ *
+ * ===================================================================
+ * AUTH STREAM RESPONSE FORMAT
+ * ===================================================================
+ *
+ * In addition to direct request/response communication, the server also sends
+ * account state updates using the auth stream format:
+ *
+ * FORMAT: "a:account_index:response_json"
+ * - 'a': Indicates auth stream message
+ * - account_index: Account identifier
+ * - response_json: JSON data containing account updates
+ *
+ * AUTH STREAM SOURCES:
+ *
+ * 1. REAL-TIME ACCOUNT UPDATES (Private WebSocket Stream):
+ *    - Order executions, fills, cancellations from other sources
+ *    - Position changes, balance updates
+ *    - User trade notifications
+ *    - Pushed automatically by Gate.io's private WebSocket channels
+ *
+ * 2. ADDITIONAL ORDER UPDATES (Order WebSocket Stream):
+ *    - Follow-up order status changes after initial order placement response
+ *    - Late execution updates, partial fills
+ *    - Final order completion notifications
+ *
+ * Both sources use the same "a:" format to provide a unified interface for
+ * all account state changes. Clients should process these messages alongside
+ * direct responses to maintain complete account state visibility.
+ *
+ * Example auth stream messages:
+ * "a:0:{\"channel\":\"futures.orders\",\"result\":[{\"status\":\"filled\",...}]}"
+ * "a:0:{\"channel\":\"futures.usertrades\",\"result\":[{\"price\":\"50000\",...}]}"
+ *
+ * ===================================================================
+ * RESPONSE PARSING GUIDE
+ * ===================================================================
+ *
+ * 1. Parse Response Format: "idx:type:payload"
+ * 2. Check Response Type:
+ *    - 'k': Operation successful (e.g., connected)
+ *    - 'e': Parse as "ERROR_TYPE-description"
+ *    - 'r': Parse JSON from Gate.io
+ *    - 'a': Auth stream message (account state updates)
+ *
+ * ===================================================================
+ * COMMON USAGE PATTERNS
+ * ===================================================================
+ *
+ * Pattern 1: Connect and Place Limit Order (One-way mode)
+ * "0,0,API_KEY,API_SECRET"                    → "0:k:0" (assigned account 0)
+ * "1,1,0,BTC_USDT,t-123,0,1,1,1,75000.0"      → Single exchange response
+ *
+ * Pattern 2: Open Short Position (Hedge mode) on Second Account
+ * "2,0,API_KEY2,API_SECRET2"                  → "2:k:1" (assigned account 1)
+ * "3,1,1,ETH_USDT,t-456,-1,2,4,2,0"          → Market SELL to open SHORT
+ *
+ * Pattern 3: Close Long Position (Hedge mode)  
+ * "4,1,0,BTC_USDT,t-789,1,2,2,1,50000.0"     → GTC SELL to close LONG on account 0
+ *
+ * Pattern 4: Cancel Order
+ * "5,-1,0,BTC_USDT,t-123"                     → Cancel on account 0
+ *
+ * Pattern 5: Replace Existing Account
+ * "6,0,NEW_API_KEY,NEW_API_SECRET,,0"         → "6:k:0" (replaced account 0)
  */
 
 #include <stdio.h>
@@ -80,29 +196,26 @@
 #include <sys/select.h>
 #include <fcntl.h>
 
-#define SERVER_IP "127.0.0.1"
+// Server connection settings
+#define SERVER_IP "10.11.4.97"
 #define SERVER_PORT 6670   // Update this if server uses different port. Confirm with the server administrator.
+
+// Client local binding port (Should be ports that allow UDP traffic and not occupied by other services)
+#define LOCAL_BIND_PORT 6671
+
+// Gate.io API credentials (REPLACE WITH YOUR ACTUAL CREDENTIALS)
+#define API_KEY "YOUR_API_KEY"
+#define API_SECRET "YOUR_API_SECRET"
+#define USER_ID "YOUR_USER_ID" // If you need to use private channel, you need to provide user_id (not yet implemented in the udp server)
+
 #define BUFFER_SIZE 65536  // Large buffer for JSON responses
 #define RECV_TIMEOUT_SEC 5 // Response timeout in seconds
 
-// Response types
-#define RESP_QTX_ACK "QTX_ACK"
-#define RESP_QTX_ERR "QTX_ERR"
-#define RESP_EXC_RES "EXC_RES"
-
-// Error types (from QTX_ERR responses)
-#define ERR_INVALID_FORMAT "INVALID_FORMAT"
-#define ERR_INVALID_INDEX "INVALID_INDEX"
-#define ERR_INVALID_MODE "INVALID_MODE"
-#define ERR_INVALID_CREDENTIALS "INVALID_CREDENTIALS"
-#define ERR_NOT_CONNECTED "NOT_CONNECTED"
-#define ERR_NOT_LOGGED_IN "NOT_LOGGED_IN"  // Rarely seen by clients
-#define ERR_INVALID_ORDER_TYPE "INVALID_ORDER_TYPE"
-#define ERR_API_SERVICE_ERROR "API_SERVICE_ERROR"
-#define ERR_TIMEOUT "TIMEOUT"
-#define ERR_LOGIN_FAILED "LOGIN_FAILED"
-#define ERR_UNKNOWN_MODE "UNKNOWN_MODE"
-#define ERR_WS_SERVICE_ERROR "WS_SERVICE_ERROR"
+// Response types (single character for network efficiency)
+#define RESP_ACK "k"
+#define RESP_ERR "e"
+#define RESP_EXC "r"
+#define RESP_AUTH "a"
 
 // Response structure
 typedef struct {
@@ -156,21 +269,11 @@ Response parse_response(const char *raw_response) {
     return resp;
 }
 
-// Parse QTX_ERR payload format: ERROR_TYPE-description
-void parse_qtx_error(const char *payload, char *error_type, char *description) {
-    const char *dash = strchr(payload, '-');
-    if (dash) {
-        size_t type_len = dash - payload;
-        strncpy(error_type, payload, type_len);
-        error_type[type_len] = '\0';
-        strcpy(description, dash + 1);
-    } else {
-        strcpy(error_type, payload);
-        description[0] = '\0';
-    }
-}
+// Simple error response format: "ERROR_TYPE-description"
+// Example: "INVALID_FORMAT-missing required fields"
+// Example: "NOT_CONNECTED-please connect first"
 
-// Send UDP message and wait for response with timeout
+// Send UDP message and wait for single response with timeout
 int send_and_receive(int sock, struct sockaddr_in *server_addr, 
                      const char *message, Response *response) {
     char buffer[BUFFER_SIZE];
@@ -229,62 +332,22 @@ void handle_response(const Response *resp) {
     printf("Index: %d\n", resp->idx);
     printf("Type: %s\n", resp->response_type);
     
-    if (strcmp(resp->response_type, RESP_QTX_ACK) == 0) {
-        printf("Status: SUCCESS (Service Acknowledgment)\n");
+    if (strcmp(resp->response_type, RESP_ACK) == 0) {
+        printf("Status: SUCCESS\n");
         printf("Message: %s\n", resp->payload);
         
-    } else if (strcmp(resp->response_type, RESP_QTX_ERR) == 0) {
-        char error_type[64] = {0};
-        char description[256] = {0};
-        parse_qtx_error(resp->payload, error_type, description);
+    } else if (strcmp(resp->response_type, RESP_ERR) == 0) {
+        printf("Status: ERROR\n");
+        printf("Error: %s\n", resp->payload);
         
-        printf("Status: ERROR (Service Error)\n");
-        printf("Error Type: %s\n", error_type);
-        printf("Description: %s\n", description);
-        
-        // Provide specific guidance based on common error types
-        if (strcmp(error_type, ERR_NOT_CONNECTED) == 0) {
-            printf("Action: Send connect message (mode 0) first\n");
-        } else if (strcmp(error_type, ERR_LOGIN_FAILED) == 0) {
-            printf("Action: Authentication failed - verify credentials and permissions\n");
-        } else if (strcmp(error_type, ERR_INVALID_CREDENTIALS) == 0) {
-            printf("Action: Check API key and secret format\n");
-        } else if (strcmp(error_type, ERR_TIMEOUT) == 0) {
-            printf("Action: Exchange did not respond within 30s, retry if needed\n");
-        } else if (strcmp(error_type, ERR_WS_SERVICE_ERROR) == 0) {
-            printf("Action: WebSocket communication error - connection may be unstable\n");
-        }
-        
-    } else if (strcmp(resp->response_type, RESP_EXC_RES) == 0) {
+    } else if (strcmp(resp->response_type, RESP_EXC) == 0) {
         printf("Status: EXCHANGE RESPONSE\n");
-        
-        // Basic JSON parsing to check status
-        // In production, use a proper JSON parser
-        if (strstr(resp->payload, "\"status\":\"200\"")) {
-            printf("Exchange Status: SUCCESS\n");
-            
-            // Extract some key fields if present
-            char *order_id = strstr(resp->payload, "\"id\":");
-            if (order_id) {
-                printf("Order ID: %s...\n", order_id);
-            }
-        } else {
-            printf("Exchange Status: ERROR\n");
-            
-            // Try to extract error info
-            char *label = strstr(resp->payload, "\"label\":\"");
-            if (label) {
-                label += 9;
-                char *end = strchr(label, '"');
-                if (end) {
-                    *end = '\0';
-                    printf("Error Code: %s\n", label);
-                }
-            }
-        }
-        
-        // For debugging, show first 200 chars of JSON
-        printf("JSON Preview: %.200s%s\n", resp->payload, 
+        printf("JSON: %.200s%s\n", resp->payload, 
+               strlen(resp->payload) > 200 ? "..." : "");
+    } else if (strcmp(resp->response_type, RESP_AUTH) == 0) {
+        printf("Status: AUTH STREAM UPDATE\n");
+        printf("Account: %d\n", resp->idx); // idx represents account_index for auth messages
+        printf("JSON: %.200s%s\n", resp->payload, 
                strlen(resp->payload) > 200 ? "..." : "");
     }
     
@@ -306,12 +369,12 @@ int main() {
     int flags = fcntl(sock, F_GETFL, 0);
     fcntl(sock, F_SETFL, flags | O_NONBLOCK);
     
-    // Set local listening address (0.0.0.0:0 for any available port)
+    // Set local binding address (any interface, configurable port)
     struct sockaddr_in local_addr;
     memset(&local_addr, 0, sizeof(local_addr));
     local_addr.sin_family = AF_INET;
     local_addr.sin_addr.s_addr = INADDR_ANY;
-    local_addr.sin_port = 0; // Let system assign port
+    local_addr.sin_port = htons(LOCAL_BIND_PORT);
     
     // Bind local port
     if (bind(sock, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
@@ -334,13 +397,15 @@ int main() {
     Response response;
     
     // ========================================
-    // 1. CONNECT TO GATE.IO
+    // 1. CONNECT TO GATE.IO (Create new account)
     // ========================================
     printf("=== STEP 1: Connecting to Gate.io ===\n");
     char connect_msg[BUFFER_SIZE];
+    int account_idx = -1;
     
+    // Connect without specifying account_idx (will create new account)
     snprintf(connect_msg, sizeof(connect_msg), 
-             "0,0,YOUR_API_KEY,YOUR_API_SECRET");
+             "0,0,%s,%s", API_KEY, API_SECRET);
     
     printf("Request: %s\n", connect_msg);
     
@@ -348,9 +413,11 @@ int main() {
     if (ret == 0) {
         handle_response(&response);
         
-        // Check if connected successfully
-        if (strcmp(response.response_type, RESP_QTX_ACK) != 0 ||
-            strcmp(response.payload, "connected") != 0) {
+        // Check if connected successfully and get account index
+        if (strcmp(response.response_type, RESP_ACK) == 0) {
+            account_idx = atoi(response.payload);
+            printf("Successfully connected! Assigned account index: %d\n", account_idx);
+        } else {
             printf("Failed to connect. Exiting.\n");
             close(sock);
             return EXIT_FAILURE;
@@ -365,124 +432,22 @@ int main() {
     usleep(100000); // 100ms
     
     // ========================================
-    // 2. PLACE LIMIT ORDER (One-Way Mode)
+    // 2. CANCEL NON-EXISTENT ORDER (Demonstrates Protocol)
     // ========================================
-    printf("=== STEP 2: Placing Limit Order (One-Way Mode) ===\n");
-    char limit_order_msg[BUFFER_SIZE];
-    snprintf(limit_order_msg, sizeof(limit_order_msg), 
-             "1,1,BTC_USDT,t-%lld,0,1,1,1,75000.0", timestamp);
-    printf("Request: %s\n", limit_order_msg);
-    printf("(PostOnly BUY 1 BTC contract at $75,000 - One-way mode)\n");
-    
-    ret = send_and_receive(sock, &server_addr, limit_order_msg, &response);
-    if (ret == 0) {
-        handle_response(&response);
-    }
-    
-    usleep(100000);
-    
-    // ========================================
-    // 3. PLACE MARKET ORDER (Hedge Mode - Open SHORT)
-    // ========================================
-    printf("=== STEP 3: Placing Market Order (Hedge Mode - Open SHORT) ===\n");
-    char market_order_msg[BUFFER_SIZE];
-    snprintf(market_order_msg, sizeof(market_order_msg), 
-             "2,1,ETH_USDT,t-%lld-mkt,-1,2,4,2,0", timestamp);
-    printf("Request: %s\n", market_order_msg);
-    printf("(Market SELL 2 ETH contracts to open SHORT position - price ignored)\n");
-    
-    ret = send_and_receive(sock, &server_addr, market_order_msg, &response);
-    if (ret == 0) {
-        handle_response(&response);
-    }
-    
-    usleep(100000);
-    
-    // ========================================
-    // 4. CLOSE POSITION (Hedge Mode - Close LONG)
-    // ========================================
-    printf("=== STEP 4: Closing Position (Hedge Mode - Close LONG) ===\n");
-    char close_position_msg[BUFFER_SIZE];
-    snprintf(close_position_msg, sizeof(close_position_msg), 
-             "4,1,BTC_USDT,t-%lld-close,1,2,2,1,50000.0", timestamp);
-    printf("Request: %s\n", close_position_msg);
-    printf("(GTC SELL 1 BTC contract to close LONG position at $50,000)\n");
-    
-    ret = send_and_receive(sock, &server_addr, close_position_msg, &response);
-    if (ret == 0) {
-        handle_response(&response);
-    }
-    
-    usleep(100000);
-    
-    // ========================================
-    // 5. CANCEL ORDER
-    // ========================================
-    printf("=== STEP 5: Canceling Order ===\n");
+    printf("=== STEP 2: Canceling Non-Existent Order ===\n");
     char cancel_msg[BUFFER_SIZE];
     snprintf(cancel_msg, sizeof(cancel_msg), 
-             "5,-1,BTC_USDT,t-%lld", timestamp);
+             "1,-1,%d,BTC_USDT,t-nonexistent-%lld", account_idx, timestamp);
     printf("Request: %s\n", cancel_msg);
+    printf("(This will demonstrate exchange error response for non-existent order)\n");
     
     ret = send_and_receive(sock, &server_addr, cancel_msg, &response);
     if (ret == 0) {
         handle_response(&response);
     }
     
-    // ========================================
-    // 6. DEMONSTRATE ERROR HANDLING
-    // ========================================
-    printf("=== STEP 6: Error Handling Examples ===\n");
-    
-    // Example: Invalid order type
-    printf("\n--- Testing invalid order type ---\n");
-    char invalid_order[BUFFER_SIZE];
-    snprintf(invalid_order, sizeof(invalid_order), 
-             "6,1,BTC_USDT,t-%lld-err,0,1,99,1,50000.0", timestamp);
-    printf("Request: %s\n", invalid_order);
-    
-    ret = send_and_receive(sock, &server_addr, invalid_order, &response);
-    if (ret == 0) {
-        handle_response(&response);
-    }
-    
-    // Example: Float size (critical validation error)
-    printf("\n--- Testing float size (integer required) ---\n");
-    char float_size_order[BUFFER_SIZE];
-    snprintf(float_size_order, sizeof(float_size_order), 
-             "7,1,BTC_USDT,t-%lld-float,0,1,1,1.5,50000.0", timestamp);
-    printf("Request: %s\n", float_size_order);
-    printf("(This should fail with INVALID_FORMAT due to float size)\n");
-    
-    ret = send_and_receive(sock, &server_addr, float_size_order, &response);
-    if (ret == 0) {
-        handle_response(&response);
-    }
-    
-    // Example: Negative size (critical validation error)  
-    printf("\n--- Testing negative size (integer parsing error) ---\n");
-    char negative_size_order[BUFFER_SIZE];
-    snprintf(negative_size_order, sizeof(negative_size_order), 
-             "8,1,BTC_USDT,t-%lld-neg,0,1,1,-1,50000.0", timestamp);
-    printf("Request: %s\n", negative_size_order);
-    printf("(This should fail with INVALID_FORMAT due to negative size)\n");
-    
-    ret = send_and_receive(sock, &server_addr, negative_size_order, &response);
-    if (ret == 0) {
-        handle_response(&response);
-    }
-    
     // Close socket
     close(sock);
-    
-    printf("\nGate.io UDP Client example completed.\n");
-    printf("\nIMPORTANT NOTES:\n");
-    printf("1. Replace YOUR_API_KEY, YOUR_API_SECRET with real credentials\n");
-    printf("2. Update SERVER_PORT to match your server's port (confirm with server administrator)\n");
-    printf("3. This example uses safe prices far from market to avoid execution\n");
-    printf("4. In production, implement proper JSON parsing for exchange responses\n");
-    printf("5. Always handle timeouts and implement retry logic\n");
-    printf("6. Monitor rate limits in exchange responses\n");
     
     return EXIT_SUCCESS;
 }
