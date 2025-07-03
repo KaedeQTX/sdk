@@ -58,8 +58,10 @@ public class SubscriptionManager {
             m.eventMs = buffer.getLong();
             m.localNs = buffer.getLong();
             m.snId = buffer.getLong();
-            m.asksLen = buffer.getLong();
-            m.bidsLen = buffer.getLong();
+            m.asksIdx = buffer.getInt();
+            m.asksLen = buffer.getInt();
+            m.bidsIdx = buffer.getInt();
+            m.bidsLen = buffer.getInt();
             return m;
         }
     }
@@ -100,8 +102,8 @@ public class SubscriptionManager {
         try {
             System.out.println("Subscribing to symbol: " + symbol);
 
-            InetAddress serverAddress = InetAddress.getByName("172.30.2.221");
-            int port = 8080;
+            InetAddress serverAddress = InetAddress.getByName("10.1.0.2");
+            int port = 9080;
             byte[] sendData = symbol.getBytes(StandardCharsets.UTF_8);
             DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, serverAddress, port);
             socket.send(sendPacket);
@@ -144,8 +146,8 @@ public class SubscriptionManager {
 
             if (pos >= 0) {
                 String unsubscribeMsg = "-" + symbol;
-                InetAddress serverAddress = InetAddress.getByName("172.30.2.221");
-                int port = 8080;
+                InetAddress serverAddress = InetAddress.getByName("10.1.0.2");
+                int port = 9080;
                 byte[] sendData = unsubscribeMsg.getBytes(StandardCharsets.UTF_8);
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, serverAddress, port);
                 socket.send(sendPacket);

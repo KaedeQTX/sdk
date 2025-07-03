@@ -38,10 +38,14 @@ struct Msg2 {
     local_ns: i64,
     // Sequence Number / Trade ID
     sn_id: i64,
+    // Index of asks (unused)
+    asks_idx: u32,
     // Number of asks
-    asks_len: usize,
+    asks_len: u32,
+    // Index of bids (unused)
+    bids_idx: u32,
     // Number of bids
-    bids_len: usize,
+    bids_len: u32,
 }
 
 #[repr(C)]
@@ -78,8 +82,7 @@ impl SubscriptionManager {
 
     fn subscribe(&mut self, symbol: &str) -> Result<(), Box<dyn std::error::Error>> {
         println!("Subscribing to symbol: {}", symbol);
-        self.socket
-            .send_to(symbol.as_bytes(), "172.30.2.221:8080")?;
+        self.socket.send_to(symbol.as_bytes(), "10.1.0.2:9080")?;
 
         let (len, _) = self.socket.recv_from(&mut self.buf)?;
         let response = String::from_utf8_lossy(&self.buf[..len]).to_string();
@@ -104,7 +107,7 @@ impl SubscriptionManager {
 
         if let Some(pos) = self.subscriptions.iter().position(|s| s.symbol == symbol) {
             self.socket
-                .send_to(unsubscribe_msg.as_bytes(), "172.30.2.221:8080")?;
+                .send_to(unsubscribe_msg.as_bytes(), "10.1.0.2:9080")?;
 
             let (len, _) = self.socket.recv_from(&mut self.buf)?;
             let response = String::from_utf8_lossy(&self.buf[..len]).to_string();
@@ -143,8 +146,11 @@ impl SubscriptionManager {
                     let msg2 = &*(self.buf.as_ptr() as *mut Msg2);
                     let level: *mut Msg2Level =
                         self.buf.as_mut_ptr().add(MSG_SIZE) as *mut Msg2Level;
-                    let asks = std::slice::from_raw_parts(level, msg2.asks_len);
-                    let bids = std::slice::from_raw_parts(level.add(msg2.asks_len), msg2.bids_len);
+                    let asks = std::slice::from_raw_parts(level, msg2.asks_len as usize);
+                    let bids = std::slice::from_raw_parts(
+                        level.add(msg2.asks_len as usize),
+                        msg2.bids_len as usize,
+                    );
 
                     f2(&subscription.symbol, msg2, asks, bids);
                 } else {

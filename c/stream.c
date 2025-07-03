@@ -68,9 +68,9 @@ int main()
     const char *default_symbols[] = {
         "binance-futures:btcusdt",
         "binance:btcusdt",
-        // "okx-swap:BTC-USDT-SWAP",
-        // "okx-spot:BTC-USDT",
-        // "bybit:BTCUSDT",
+        "okx-swap:BTC-USDT-SWAP",
+        "okx-spot:BTC-USDT",
+        "bybit:BTCUSDT",
         "gate-io-futures:BTC_USDT",
         "bitget-futures:BTCUSDT",
         "bitget:BTCUSDT",
