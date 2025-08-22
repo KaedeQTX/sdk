@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 #include <time.h>
 
-#define SERVER_IP "10.10.0.2"
+#define SERVER_IP "10.11.4.97"
 #define SERVER_PORT 6666
 #define BUFFER_SIZE 1500
 #define API_KEY "API_KEY"

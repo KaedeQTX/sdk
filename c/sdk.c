@@ -80,7 +80,8 @@ int subscribe(const char *symbol)
     return 0;
 }
 
-int add_subscripton(int len) {
+int add_subscripton(int len)
+{
     manager.buf[len] = '\0';
     unsigned int index;
     char subscripted_symbol[MAX_SYMBOL_LEN] = {0};
@@ -100,7 +101,7 @@ int add_subscripton(int len) {
         {
             strncpy(manager.subscriptions[manager.subscription_count].symbol,
                     subscripted_symbol, MAX_SYMBOL_LEN - 1);
-            manager.subscriptions[manager.subscription_count].symbol[MAX_SYMBOL_LEN-1] = '\0';
+            manager.subscriptions[manager.subscription_count].symbol[MAX_SYMBOL_LEN - 1] = '\0';
             manager.subscriptions[manager.subscription_count].index = index;
             manager.subscription_count++;
             printf("Successfully subscribed to %s with index %u\n", subscripted_symbol, index);
@@ -195,4 +196,3 @@ void handle_signal(int sig)
     running = 0;
     unsubscribe_all();
 }
-

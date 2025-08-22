@@ -68,9 +68,9 @@ int main()
     const char *default_symbols[] = {
         "binance-futures:btcusdt",
         "binance:btcusdt",
-        // "okx-swap:BTC-USDT-SWAP",
-        // "okx-spot:BTC-USDT",
-        // "bybit:BTCUSDT",
+        "okx-swap:BTC-USDT-SWAP",
+        "okx-spot:BTC-USDT",
+        "bybit:BTCUSDT",
         "gate-io-futures:BTC_USDT",
         "bitget-futures:BTCUSDT",
         "bitget:BTCUSDT",
@@ -102,69 +102,82 @@ int main()
         }
 
         // 订阅
-        if (ntohs(from_addr.sin_port) == 8080) {
+        if (ntohs(from_addr.sin_port) == SUBSCRIPTION_MANAGER_PORT)
+        {
             add_subscripton(len);
             continue;
         }
 
-        Msg *msg = (Msg *)manager.buf;
-        // 查找对应的订阅
-        const char *symbol = NULL;
-        for (int i = 0; i < manager.subscription_count; i++)
+        // 處理UDP包中的所有消息
+        int offset = 0;
+        while (offset + sizeof(Msg) <= len)
         {
-            if (manager.subscriptions[i].index == msg->index)
+            Msg *msg = (Msg *)(manager.buf + offset);
+            
+            // 查找对应的订阅
+            const char *symbol = NULL;
+            for (int i = 0; i < manager.subscription_count; i++)
             {
-                symbol = manager.subscriptions[i].symbol;
-                break;
-            }
-        }
-
-        if (symbol != NULL)
-        {
-            long long now = get_current_timestamp_ns();
-            long long latency = now - msg->local_ns;
-
-            if (msg->msg_type == 2)
-            {
-                // 处理深度数据
-                Msg2 *msg2 = (Msg2 *)manager.buf;
-                Msg2Level *levels = (Msg2Level *)(manager.buf + sizeof(Msg2));
-                printf("%s: depth, %zu, %zu, %lld\n",
-                       symbol, msg2->asks_len, msg2->bids_len, latency);
-
-                printf("asks: ");
-                for (size_t i = 0; i < msg2->asks_len; i++)
+                if (manager.subscriptions[i].index == msg->index)
                 {
-                    printf("%.8g:%.8g, ", levels[i].price, levels[i].size);
+                    symbol = manager.subscriptions[i].symbol;
+                    break;
                 }
-                printf("\nbids: ");
-                for (size_t i = 0; i < msg2->bids_len; i++)
+            }
+
+            if (symbol != NULL)
+            {
+                long long now = get_current_timestamp_ns();
+                long long latency = now - msg->local_ns;
+
+                if (msg->msg_type == 2)
                 {
-                    printf("%.8g:%.8g, ", levels[msg2->asks_len + i].price,
-                           levels[msg2->asks_len + i].size);
+                    // L2 消息處理 - 整個UDP包應該只包含一個L2消息
+                    Msg2 *msg2 = (Msg2 *)manager.buf;
+                    Msg2Level *levels = (Msg2Level *)(manager.buf + sizeof(Msg2));
+                    printf("%s: depth, %d, %d, %lld\n",
+                           symbol, msg2->asks_len, msg2->bids_len, latency);
+
+                    printf("asks: ");
+                    for (int i = 0; i < msg2->asks_len; i++)
+                    {
+                        printf("%.8g:%.8g, ", levels[i].price, levels[i].size);
+                    }
+                    printf("\nbids: ");
+                    for (int i = 0; i < msg2->bids_len; i++)
+                    {
+                        printf("%.8g:%.8g, ", levels[msg2->asks_len + i].price,
+                               levels[msg2->asks_len + i].size);
+                    }
+                    printf("\n");
+                    
+                    // L2 消息佔用整個UDP包，直接跳出循環
+                    break;
                 }
-                printf("\n");
+                else if (abs(msg->msg_type) == 1)
+                {
+                    // 处理 ticker 数据
+                    printf("%s: ticker, %s, %.8g, %.8g, %lld\n",
+                           symbol,
+                           msg->msg_type > 0 ? "bid" : "ask",
+                           msg->price,
+                           msg->size,
+                           latency);
+                }
+                else if (abs(msg->msg_type) == 3)
+                {
+                    // 处理交易数据
+                    printf("%s: trade, %s, %.8g, %.8g, %lld\n",
+                           symbol,
+                           msg->msg_type > 0 ? "buy" : "sell",
+                           msg->price,
+                           msg->size,
+                           latency);
+                }
             }
-            else if (abs(msg->msg_type) == 1)
-            {
-                // 处理 ticker 数据
-                printf("%s: ticker, %s, %.8g, %.8g, %lld\n",
-                       symbol,
-                       msg->msg_type > 0 ? "bid" : "ask",
-                       msg->price,
-                       msg->size,
-                       latency);
-            }
-            else if (abs(msg->msg_type) == 3)
-            {
-                // 处理交易数据
-                printf("%s: trade, %s, %.8g, %.8g, %lld\n",
-                       symbol,
-                       msg->msg_type > 0 ? "buy" : "sell",
-                       msg->price,
-                       msg->size,
-                       latency);
-            }
+            
+            // 移動到下一個消息
+            offset += sizeof(Msg);
         }
     }
 
