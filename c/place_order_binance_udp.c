@@ -8,24 +8,34 @@
  * characters in all fields (api keys, order IDs, etc.).
  *
  * 1. CONNECT (Mode 0) - Multi-Account Management
- *    Format:  idx,0,api_key,api_secret[,user_id][,account_index]
+ *    Format:  idx,0,api_key,api_secret[,passphrase][,account_index]
  *    
- *    PURPOSE: The UDP server supports multiple Gate.io accounts simultaneously.
+ *    PURPOSE: The UDP server supports multiple Binance accounts simultaneously.
  *    Each account gets an index (0, 1, 2, ...) that you use in subsequent place/cancel orders.
  *    This allows trading on multiple accounts through a single UDP connection.
+ *    
+ *    PASSPHRASE FIELD REQUIREMENT (IMPORTANT):
+ *    While Binance doesn't use a passphrase, the UDP protocol maintains a uniform format
+ *    across all exchanges (Gate.io requires user_id in this field). Therefore:
+ *    
+ *    • If using account_index parameter: MUST include empty passphrase field
+ *    • Format with account_index: "idx,0,api_key,api_secret,,account_index"
+ *    • Format without account_index: "idx,0,api_key,api_secret" (passphrase omitted)
+ *    
+ *    This ensures protocol consistency while allowing Binance to ignore the passphrase.
  *    
  *    USAGE PATTERN:
  *    1. Connect Account A → Assigned index 0
  *    2. Connect Account B → Assigned index 1
- *    3. Place order using account 0: "100,1,0,BTC_USDT,..."
- *    4. Place order using account 1: "101,1,1,ETH_USDT,..."
- *    5. Cancel order on account 0: "102,-1,0,BTC_USDT,..."
+ *    3. Place order using account 0: "100,1,0,BTCUSDT,..."
+ *    4. Place order using account 1: "101,1,1,ETHUSDT,..."
+ *    5. Cancel order on account 0: "102,-1,0,BTCUSDT,..."
  *    
  *    Examples:
  *    "0,0,API_KEY_A,SECRET_A"                    → "0:k:0" (first account, index 0)
  *    "1,0,API_KEY_B,SECRET_B"                    → "1:k:1" (second account, index 1)
- *    "2,0,API_KEY_C,SECRET_C,USER_ID_C"          → "2:k:2" (third account with auth stream)
- *    "3,0,API_KEY_D,SECRET_D,,0"                 → "3:k:0" (replace account at index 0)
+ *    "2,0,API_KEY_C,SECRET_C,,0"                 → "2:k:0" (replace account at index 0, note empty passphrase)
+ *    "3,0,API_KEY_D,SECRET_D,,2"                 → "3:k:2" (assign to index 2, note empty passphrase)
  *    
  *    Response Success: "idx:k:account_index"     (returns assigned/confirmed index)
  *    Response Error:   "idx:e:ERROR_TYPE-description"
@@ -46,74 +56,46 @@
  *    - When account is successfully replaced: old connections are automatically closed
  *    - WebSocket connections, auth streams are properly cleaned up
  *    - Server maintains order placement connections for all accounts simultaneously
- *    - user_id enables auth stream for real-time updates (optional)
+ *    - passphrase field: IGNORE this field (Binance doesn't use it, but field must be present for account_index)
  *
  * 2. PLACE ORDER (Mode 1)
  *    Format:  idx,1,account_index,symbol,client_order_id,pos_side,side,order_type,size,price
- *    Example: "1,1,0,BTC_USDT,t-12345,0,1,1,1,75000.0"  (use account 0)
+ *    Example: "1,1,0,BTCUSDT,order-12345,0,1,1,0.001,75000.0"  (use account 0)
  *    
  *    Parameters:
- *    - symbol: Gate.io format with underscore (BTC_USDT, ETH_USDT)
- *    - client_order_id: Must start with "t-" prefix, <30 characters total
- *    - pos_side: Position intent mapping (see POSITION SIDE MAPPING below)
- *    - side: 1=BUY, 2=SELL (only these values are valid)
+ *    - symbol: Binance format without underscore (BTCUSDT, ETHUSDT)
+ *    - client_order_id: Any unique string
+ *    - pos_side: LONG=1, SHORT=-1, BOTH=0
+ *    - side: 1=BUY, 2=SELL
  *    - order_type: 0=IOC, 1=PostOnly, 2=GTC, 3=FOK, 4=MARKET
- *    - size: MUST be positive integer (contracts), NO floats allowed
+ *    - size: Supports decimal values (0.001, 0.5, etc.)
  *    - price: Order price (ignored for MARKET orders - use 0)
  *
  * 3. CANCEL ORDER (Mode -1)
  *    Format:  idx,-1,account_index,symbol,client_order_id
- *    Example: "2,-1,0,BTC_USDT,t-12345"  (cancel on account 0)
+ *    Example: "2,-1,0,BTCUSDT,order-12345"  (cancel on account 0)
  *
  * ===================================================================
- * POSITION SIDE MAPPING (CRITICAL FOR HEDGE MODE)
+ * POSITION SIDE MAPPING (HEDGE MODE SUPPORT)
  * ===================================================================
  *
- * Gate.io doesn't support Binance-style positionSide parameter.
- * The pos_side parameter controls reduce_only flag for position intent:
+ * Binance supports native positionSide parameter for hedge mode trading.
+ * The pos_side parameter maps directly to Binance's positionSide:
  *
  * pos_side=0 (One-way mode):
- *   - Always reduce_only=false
- *   - User manages exact position size
+ *   - Maps to positionSide="BOTH"
  *   - All positions are netted together
+ *   - Most common for spot and simple futures trading
  *
  * pos_side=1 (Long position in hedge mode):
- *   - BUY orders: reduce_only=false (open long position)
- *   - SELL orders: reduce_only=true (close long position)
+ *   - Maps to positionSide="LONG"
+ *   - BUY orders: Open or increase long position
+ *   - SELL orders: Close or reduce long position
  *
  * pos_side=-1 (Short position in hedge mode):
- *   - BUY orders: reduce_only=true (close short position)  
- *   - SELL orders: reduce_only=false (open short position)
- *
- * This mapping solves hedge mode ambiguity where BUY could mean 
- * "open long" or "close short" depending on user intent.
- *
- * ===================================================================
- * CRITICAL VALIDATION RULES
- * ===================================================================
- *
- * 1. SIZE MUST BE POSITIVE INTEGER:
- *    Valid:   "1", "10", "100"
- *    Invalid: "1.5", "-1", "0", "1.0"
- *    Result:  e:INVALID_FORMAT for non-integers
- *
- * 2. CLIENT ORDER ID REQUIREMENTS:
- *    - Must start with "t-" prefix
- *    - Total length < 30 characters
- *    - Example: "t-12345", "t-timestamp-1"
- *
- * 3. SYMBOL FORMAT:
- *    - Use underscore: "BTC_USDT", "ETH_USDT"
- *    - NOT concatenated: "BTCUSDT" is wrong
- *
- * 4. SIDE VALUES:
- *    - Only 1 (BUY) and 2 (SELL) are valid
- *    - Other values → e:INVALID_FORMAT
- *
- * 5. MARKET ORDERS:
- *    - Use order_type=4 (MARKET) with any price (ignored)
- *    - OR use order_type=0/3 (IOC/FOK) with price=0
- *    - Gate.io API requires price=0 for market orders
+ *   - Maps to positionSide="SHORT"
+ *   - BUY orders: Close or reduce short position
+ *   - SELL orders: Open or increase short position
  *
  * ===================================================================
  * ORDER TYPES REFERENCE
@@ -146,9 +128,9 @@
  * 
  * 2. EXCHANGE RESPONSE (type='r'):
  *    Format: "idx:r:json_response"
- *    Example: "1:r:{\"id\":123,\"status\":\"open\"}" (order placed)
- *    Example: "2:r:{\"id\":123,\"left\":\"0\"}" (order cancelled)
- *    Note: Parse JSON from Gate.io exchange response
+ *    Example: "1:r:{\"orderId\":123,\"status\":\"NEW\"}" (order placed)
+ *    Example: "2:r:{\"orderId\":123,\"status\":\"CANCELED\"}" (order cancelled)
+ *    Note: Parse JSON from Binance exchange response
  * 
  * 3. ERROR RESPONSE (type='e'):
  *    Format: "idx:e:ERROR_TYPE-description"
@@ -158,22 +140,19 @@
  * 
  * AUTH STREAM UPDATE:
  *    Format: "a:account_index:json_response"
- *    Example: "a:0:{\"channel\":\"futures.orders\",\"event\":\"update\"}"
+ *    Example: "a:0:{\"e\":\"executionReport\",\"s\":\"BTCUSDT\"}"
  *
  * AUTH STREAM UPDATE SOURCES:
  *
- * 1. PLACED ORDER FOLLOW-UP MESSAGES (Gate.io specific - always active):
- *    - Gate.io sends order acknowledgment + subsequent fill updates as order placement response
- *    - In QTX:
- *      - First response (ack) is sent as indexed response (e.g., "1:r:{...}")
- *      - Subsequent updates (fills, partial fills) are sent as auth format ("a:0:{...}")
- *      - This happens even WITHOUT user_id, as it's part of Gate.io's order response pattern
+ * 1. ORDER EXECUTION UPDATES:
+ *    - Real-time order state changes (NEW, FILLED, CANCELED, etc.)
+ *    - Trade execution notifications
+ *    - Order updates from any source (API, web interface, mobile app)
  *
- * 2. REAL-TIME ACCOUNT UPDATES (requires user_id during login):
- *    - Order executions, fills, cancellations from other sources
- *    - Position changes, balance updates
- *    - User trade notifications
- *    - Pushed automatically by Gate.io's private WebSocket channels
+ * 2. ACCOUNT STATE CHANGES:
+ *    - Balance updates after trades
+ *    - Position changes in futures trading
+ *    - Account-level notifications
  *
  * RESPONSE DESTINATION:
  * 1. All indexed responses are sent to the <ip>:<port> from which the request originated.
@@ -182,33 +161,37 @@
  * COMMON USAGE PATTERNS
  * ===================================================================
  *
- * Pattern 1: Connect WITHOUT Auth Stream (Basic Trading)
- * "0,0,API_KEY,API_SECRET"                    → "0:k:0" (assigned account 0, no auth stream)
- * "1,1,0,BTC_USDT,t-123,0,1,1,1,75000.0"      → "1:r:{ack}" + "a:0:{fill}" (placed order follow-ups)
+ * Pattern 1: Basic Single Account Trading
+ * "0,0,API_KEY,API_SECRET"                     → "0:k:0" (assigned account 0)
+ * "1,1,0,BTCUSDT,order-123,0,1,1,0.001,75000" → Place limit buy order
  *
- * Pattern 2: Connect WITH Auth Stream (Full Account Updates)
- * "2,0,API_KEY,API_SECRET,110284739"          → "2:k:0" (assigned account 0, auth stream active)
- * "3,1,0,BTC_USDT,t-456,0,1,1,1,75000.0"      → Exchange response + auth stream updates
+ * Pattern 2: Hedge Mode Trading
+ * "2,0,API_KEY,API_SECRET"                     → "2:k:0" (assigned account 0)
+ * "3,1,0,BTCUSDT,long-1,1,1,2,0.001,75000"    → Open LONG position
+ * "4,1,0,BTCUSDT,short-1,-1,2,2,0.001,74000"  → Open SHORT position
+ * "5,1,0,BTCUSDT,close-long,1,2,2,0.001,76000" → Close LONG position
  *
- * Pattern 3: Open Short Position (Hedge mode) on Second Account
- * "4,0,API_KEY2,API_SECRET2,110284740"        → "4:k:1" (assigned account 1, auth stream active)
- * "5,1,1,ETH_USDT,t-789,-1,2,4,2,0"          → Market SELL to open SHORT
+ * Pattern 3: Market Orders
+ * "6,1,0,ETHUSDT,market-buy,0,1,4,0.1,0"      → Market BUY (price ignored)
  *
- * Pattern 4: Close Long Position (Hedge mode)  
- * "6,1,0,BTC_USDT,t-close,1,2,2,1,50000.0"   → GTC SELL to close LONG on account 0
+ * Pattern 4: Multi-Account Management
+ * "7,0,API_KEY1,SECRET1"                       → "7:k:0" (first account)
+ * "8,0,API_KEY2,SECRET2"                       → "8:k:1" (second account)
+ * "9,1,0,BTCUSDT,acc0-order,0,1,2,0.001,75000" → Trade on account 0
+ * "10,1,1,ETHUSDT,acc1-order,0,2,2,0.1,3000"  → Trade on account 1
  *
- * Pattern 5: Cancel Order
- * "7,-1,0,BTC_USDT,t-123"                     → Cancel on account 0
+ * Pattern 5: Cancel Orders
+ * "11,-1,0,BTCUSDT,order-123"                 → Cancel order on account 0
  *
  * Pattern 6: Replace Existing Account (Success)
- * "8,0,NEW_API_KEY,NEW_API_SECRET,,0"         → "8:k:0" (replaced account 0)
+ * "12,0,NEW_API_KEY,NEW_SECRET,,0"            → "12:k:0" (replaced account 0)
  * 
  * Pattern 7: Replace Existing Account (Failure - Old Account Preserved)
- * "9,0,INVALID_KEY,INVALID_SECRET,,0"         → "9:e:LOGIN_FAILED" (account 0 unchanged)
+ * "13,0,INVALID_KEY,INVALID_SECRET,,0"        → "13:e:TIMEOUT" (account 0 unchanged)
  * 
  * Pattern 8: Out-of-Bounds Index Assignment
  * Current accounts: [0, 1] (2 accounts exist)
- * "10,0,API_KEY,API_SECRET,,5"                → "10:k:2" (assigned to index 2, not 5)
+ * "14,0,API_KEY,API_SECRET,,5"                → "14:k:2" (assigned to index 2, not 5)
  */
 
 #include <stdio.h>
@@ -223,15 +206,14 @@
 
 // Server connection settings
 #define SERVER_IP "10.11.4.97"
-#define SERVER_PORT 6670   // Update this if server uses different port. Confirm with the server administrator.
+#define SERVER_PORT 6671   // Update this if server uses different port. Confirm with the server administrator.
 
 // Client local binding port (Should be ports that allow UDP traffic and not occupied by other services)
-#define LOCAL_BIND_PORT 6671
+#define LOCAL_BIND_PORT 6672
 
-// Gate.io API credentials (REPLACE WITH YOUR ACTUAL CREDENTIALS)
+// Binance API credentials (REPLACE WITH YOUR ACTUAL CREDENTIALS)
 #define API_KEY "YOUR_API_KEY"
 #define API_SECRET "YOUR_API_SECRET"
-#define USER_ID "YOUR_USER_ID" // Required for auth stream (private channel subscriptions). Leave empty if not needed.
 
 #define BUFFER_SIZE 65536  // Large buffer for JSON responses
 #define RECV_TIMEOUT_SEC 5 // Response timeout in seconds
@@ -293,10 +275,6 @@ Response parse_response(const char *raw_response) {
     resp.is_valid = 1;
     return resp;
 }
-
-// Simple error response format: "ERROR_TYPE-description"
-// Example: "INVALID_FORMAT-missing required fields"
-// Example: "NOT_CONNECTED-please connect first"
 
 // Send UDP message and wait for single response with timeout
 int send_and_receive(int sock, struct sockaddr_in *server_addr, 
@@ -408,7 +386,7 @@ int main() {
         return EXIT_FAILURE;
     }
     
-    printf("Gate.io UDP Client connecting to %s:%d...\n\n", SERVER_IP, SERVER_PORT);
+    printf("Binance UDP Client connecting to %s:%d...\n\n", SERVER_IP, SERVER_PORT);
     
     // Set target (server) address
     struct sockaddr_in server_addr;
@@ -422,20 +400,21 @@ int main() {
     Response response;
     
     // ========================================
-    // 1. CONNECT TO GATE.IO (Create new account)
+    // 1. CONNECT TO BINANCE (Create new account)
     // ========================================
-    printf("=== STEP 1: Connecting to Gate.io ===\n");
+    printf("=== STEP 1: Connecting to Binance ===\n");
     char connect_msg[BUFFER_SIZE];
     int account_index = -1;
     
-    // Connect with user_id to enable auth stream (optional - remove user_id if not needed)
-    // Option 1: With auth stream (full account updates)
+    // Connect to Binance (passphrase not used by Binance, but protocol field maintained)
+    // Using auto-assigned account index (no account_index parameter)
     snprintf(connect_msg, sizeof(connect_msg), 
-             "0,0,%s,%s,%s", API_KEY, API_SECRET, USER_ID);
+             "0,0,%s,%s", API_KEY, API_SECRET);
     
-    // Option 2: Without auth stream (basic trading only)  
+    // Alternative format to specify account index 0 explicitly:
     // snprintf(connect_msg, sizeof(connect_msg), 
-    //          "0,0,%s,%s", API_KEY, API_SECRET);
+    //          "0,0,%s,%s,,0", API_KEY, API_SECRET);
+    // Note the empty passphrase field (double comma) when using account_index
     
     printf("Request: %s\n", connect_msg);
     
@@ -467,7 +446,7 @@ int main() {
     printf("=== STEP 2: Canceling Non-Existent Order ===\n");
     char cancel_msg[BUFFER_SIZE];
     snprintf(cancel_msg, sizeof(cancel_msg), 
-             "1,-1,%d,BTC_USDT,t-nonexistent-%lld", account_index, timestamp);
+             "1,-1,%d,BTCUSDT,nonexistent-order-%lld", account_index, timestamp);
     printf("Request: %s\n", cancel_msg);
     printf("(Canceling non-existent order to test error handling)\n");
     
