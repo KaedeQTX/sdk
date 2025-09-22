@@ -70,10 +70,12 @@ int main()
         "binance:btcusdt",
         "okx-swap:BTC-USDT-SWAP",
         "okx-spot:BTC-USDT",
-        "bybit:BTCUSDT",
+        "bybit:BTCUSDT", // This is the futures of Bybit
         "gate-io-futures:BTC_USDT",
-        "bitget-futures:BTCUSDT",
-        "bitget:BTCUSDT",
+        "kucoin-futures:XBTUSDTM",
+        "kucoin:BTC-USDT",
+        "bitget-futures:BTCUSDT", // implementation in progress
+        "bitget:BTCUSDT", // implementation in progress
     };
     for (int i = 0; i < sizeof(default_symbols) / sizeof(default_symbols[0]); i++)
     {
