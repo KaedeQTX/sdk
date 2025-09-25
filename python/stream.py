@@ -11,7 +11,7 @@ import sys
 UDP_SIZE = 65536
 MAX_SYMBOLS = 100
 MAX_SYMBOL_LEN = 64
-SUBSCRIPTION_MANAGER = "10.1.0.2"
+SUBSCRIPTION_MANAGER = "10.11.4.97"
 SUBSCRIPTION_MANAGER_PORT = 9080
 LOCAL_BINDING_PORT = 9088
 
@@ -273,11 +273,13 @@ def main():
     # Subscribe to default symbols
     default_symbols = [
         "binance-futures:btcusdt",
-        "binance:btcusdt", 
+        "binance:btcusdt",
         "okx-swap:BTC-USDT-SWAP",
         "okx-spot:BTC-USDT",
         "bybit:BTCUSDT",
         "gate-io-futures:BTC_USDT",
+        "kucoin-futures:XBTUSDTM",
+        "kucoin:BTC-USDT",
         "bitget-futures:BTCUSDT",
         "bitget:BTCUSDT",
     ]

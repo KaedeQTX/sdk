@@ -47,8 +47,10 @@ public class SubscriptionManager {
         long eventMs;
         long localNs;
         long snId;
-        long asksLen;
-        long bidsLen;
+        int asksIdx;  // unused
+        int asksLen;  // number of asks
+        int bidsIdx;  // unused
+        int bidsLen;  // number of bids
 
         static Msg2 fromByteBuffer(ByteBuffer buffer) {
             Msg2 m = new Msg2();
@@ -90,7 +92,7 @@ public class SubscriptionManager {
 
     public boolean init() {
         try {
-            socket = new DatagramSocket();
+            socket = new DatagramSocket(9088);  // Bind to LOCAL_BINDING_PORT
             return true;
         } catch (SocketException e) {
             e.printStackTrace();
@@ -102,7 +104,7 @@ public class SubscriptionManager {
         try {
             System.out.println("Subscribing to symbol: " + symbol);
 
-            InetAddress serverAddress = InetAddress.getByName("10.1.0.2");
+            InetAddress serverAddress = InetAddress.getByName("10.11.4.97");
             int port = 9080;
             byte[] sendData = symbol.getBytes(StandardCharsets.UTF_8);
             DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, serverAddress, port);
@@ -146,7 +148,7 @@ public class SubscriptionManager {
 
             if (pos >= 0) {
                 String unsubscribeMsg = "-" + symbol;
-                InetAddress serverAddress = InetAddress.getByName("10.1.0.2");
+                InetAddress serverAddress = InetAddress.getByName("10.11.4.97");
                 int port = 9080;
                 byte[] sendData = unsubscribeMsg.getBytes(StandardCharsets.UTF_8);
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, serverAddress, port);
@@ -256,7 +258,15 @@ public class SubscriptionManager {
 
         String[] defaultSymbols = {
                 "binance-futures:btcusdt",
-                "binance:btcusdt"
+                "binance:btcusdt",
+                "okx-swap:BTC-USDT-SWAP",
+                "okx-spot:BTC-USDT",
+                "bybit:BTCUSDT",
+                "gate-io-futures:BTC_USDT",
+                "kucoin-futures:XBTUSDTM",
+                "kucoin:BTC-USDT",
+                "bitget-futures:BTCUSDT",
+                "bitget:BTCUSDT"
         };
 
         Arrays.stream(defaultSymbols).forEach(symbol -> {

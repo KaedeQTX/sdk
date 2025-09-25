@@ -18,7 +18,7 @@ const (
 	UDPSize                 = 65536
 	MaxSymbols              = 100
 	MaxSymbolLen            = 64
-	SubscriptionManagerAddr = "10.1.0.2"
+	SubscriptionManagerAddr = "10.11.4.97"
 	SubscriptionManagerPort = 9080
 	LocalBindingPort        = 9088
 )
@@ -375,6 +375,8 @@ func main() {
 		"okx-spot:BTC-USDT",
 		"bybit:BTCUSDT",
 		"gate-io-futures:BTC_USDT",
+		"kucoin-futures:XBTUSDTM",
+		"kucoin:BTC-USDT",
 		"bitget-futures:BTCUSDT",
 		"bitget:BTCUSDT",
 	}

@@ -72,7 +72,7 @@ struct SubscriptionManager {
 
 impl SubscriptionManager {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let socket = UdpSocket::bind("0.0.0.0:0")?;
+        let socket = UdpSocket::bind("0.0.0.0:9088")?;  // Bind to LOCAL_BINDING_PORT
         Ok(Self {
             socket,
             buf: [0u8; UDP_SIZE],
@@ -82,7 +82,7 @@ impl SubscriptionManager {
 
     fn subscribe(&mut self, symbol: &str) -> Result<(), Box<dyn std::error::Error>> {
         println!("Subscribing to symbol: {}", symbol);
-        self.socket.send_to(symbol.as_bytes(), "10.1.0.2:9080")?;
+        self.socket.send_to(symbol.as_bytes(), "10.11.4.97:9080")?;
 
         let (len, _) = self.socket.recv_from(&mut self.buf)?;
         let response = String::from_utf8_lossy(&self.buf[..len]).to_string();
@@ -107,7 +107,7 @@ impl SubscriptionManager {
 
         if let Some(pos) = self.subscriptions.iter().position(|s| s.symbol == symbol) {
             self.socket
-                .send_to(unsubscribe_msg.as_bytes(), "10.1.0.2:9080")?;
+                .send_to(unsubscribe_msg.as_bytes(), "10.11.4.97:9080")?;
 
             let (len, _) = self.socket.recv_from(&mut self.buf)?;
             let response = String::from_utf8_lossy(&self.buf[..len]).to_string();
@@ -197,8 +197,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for symbol in [
         "binance-futures:btcusdt",
         "binance:btcusdt",
-        // "okx-swap:BTC-USDT-SWAP",
-        // "bybit:BTCUSDT",
+        "okx-swap:BTC-USDT-SWAP",
+        "okx-spot:BTC-USDT",
+        "bybit:BTCUSDT",
+        "gate-io-futures:BTC_USDT",
+        "kucoin-futures:XBTUSDTM",
+        "kucoin:BTC-USDT",
+        "bitget-futures:BTCUSDT",
+        "bitget:BTCUSDT",
     ] {
         if let Err(e) = manager.subscribe(symbol) {
             eprintln!("Failed to subscribe to {}: {}", symbol, e);
