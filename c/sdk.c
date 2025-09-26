@@ -34,7 +34,13 @@ volatile sig_atomic_t running = 1;
 
 int init_subscription_manager()
 {
-    // 创建 UDP socket
+    // CRITICAL: Create a single UDP socket that will be used for BOTH:
+    // 1. Sending subscription requests to the manager (port 9080)
+    // 2. Receiving market data streams (from various server ports)
+    //
+    // The server tracks clients by the source IP:port of subscription requests
+    // and sends data back to that exact same IP:port. Using different sockets
+    // for subscription and reception will result in no data being received.
     manager.socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (manager.socket < 0)
     {
@@ -45,6 +51,8 @@ int init_subscription_manager()
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
+    // Bind to 0.0.0.0 (INADDR_ANY) to accept data from any source IP
+    // This is crucial as subscription endpoint and data sender may use different IPs
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(LOCAL_BINDING_PORT);
 
@@ -63,13 +71,16 @@ int subscribe(const char *symbol)
 {
     printf("Subscribing to symbol: %s\n", symbol);
 
-    // 发送订阅请求
+    // Send subscription request using the SAME socket that will receive data
+    // The server will record our socket's IP:port from this request
+    // and send market data back to this exact IP:port
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(SUBSCRIPTION_MANAGER_PORT);
     inet_pton(AF_INET, SUBSCRIPTION_MANAGER, &server_addr.sin_addr);
 
+    // Using manager.socket - the same socket created in init_subscription_manager()
     if (sendto(manager.socket, symbol, strlen(symbol), 0,
                (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
     {

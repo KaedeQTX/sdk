@@ -59,6 +59,12 @@ long long get_current_timestamp_ns()
 
 int main()
 {
+    // IMPORTANT PROTOCOL REQUIREMENT:
+    // This client uses a SINGLE UDP socket for both subscription and data reception.
+    // The server tracks clients by their subscription request's source IP:port and
+    // sends market data back to that exact endpoint. Using different sockets would
+    // result in no data being received. The socket is created in init_subscription_manager()
+    // and used throughout the program's lifetime.
     if (init_subscription_manager() < 0)
     {
         return 1;
@@ -90,11 +96,15 @@ int main()
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
-    // 主循环
+    // Main reception loop - using the SAME socket for receiving data
+    // that was used for sending subscription requests
+    // This is CRITICAL: the server sends data to the IP:port it saw
+    // in the subscription request, so we must receive on that same socket
     while (running)
     {
         struct sockaddr_in from_addr;
         socklen_t from_len = sizeof(from_addr);
+        // Receive on manager.socket - the same socket used for subscribe()
         int len = recvfrom(manager.socket, manager.buf, UDP_SIZE, 0,
                            (struct sockaddr *)&from_addr, &from_len);
         if (len < 0)
